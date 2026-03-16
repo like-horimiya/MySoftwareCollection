@@ -40,11 +40,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Fetching artifact list for run_id=${RUN_ID} ..."
+          echo "PRIVATE_REPO: ${PRIVATE_REPO}"
+          echo "RUN_ID: ${RUN_ID}"
+          echo "VERSION: ${VERSION}"
+          API_URL="https://api.github.com/repos/${PRIVATE_REPO}/actions/runs/${RUN_ID}/artifacts"
+          echo "API_URL: ${API_URL}"
+
           ARTIFACTS=$(curl -fsSL \
             -H "Authorization: Bearer ${RELEASE_PAT}" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${PRIVATE_REPO}/actions/runs/${RUN_ID}/artifacts")
+            "${API_URL}")
 
           echo "Artifact list:"
           echo "${ARTIFACTS}" | jq -r '.artifacts[] | "\(.id)  \(.name)"'
@@ -87,30 +92,27 @@ jobs:
           echo "SHA256=${SHA256}" >> "$GITHUB_ENV"
           echo "SHA-256: ${SHA256}  ${SETUP_EXE}"
 
-      # ── 4. 既存リリースのリリースIDを取得 ────────────────────────────
-      #   タグが存在しない場合はエラーで終了（新規作成はしない）。
-      - name: Get existing release ID
+      # ── 4. v0.0.1 リリースのIDを取得（常にこのタグに上書き） ─────────
+      - name: Get release ID
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
 
           RELEASE=$(curl -fsSL \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${VERSION}")
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/v0.0.1")
 
           RELEASE_ID=$(echo "${RELEASE}" | jq -r '.id')
 
           if [ -z "${RELEASE_ID}" ] || [ "${RELEASE_ID}" = "null" ]; then
-            echo "ERROR: Release for tag ${VERSION} not found in ${{ github.repository }}"
-            echo "Please create the release/tag manually before running this workflow."
+            echo "ERROR: Release v0.0.1 not found in ${{ github.repository }}"
             exit 1
           fi
 
           echo "RELEASE_ID=${RELEASE_ID}" >> "$GITHUB_ENV"
-          echo "Found release ID: ${RELEASE_ID} for tag ${VERSION}"
+          echo "Found release ID: ${RELEASE_ID} (v0.0.1)"
 
       # ── 5. 同名アセットを削除（上書き） ─────────────────────────────
       #   既存の TwitchBot-*-setup.exe をすべて削除してから再アップロードする。
