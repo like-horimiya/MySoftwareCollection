@@ -1,10 +1,18 @@
 name: Publish Release
 
-# privateリポジトリの build.yml から cross-repo dispatch で呼び出される。
+# 各 private リポジトリの build.yml から cross-repo dispatch で呼び出される。
 # 手動トリガーも可（緊急再実行用）。
+#
+# app input の値でどちらのアプリかを判定する:
+#   "twitchbot" → LikeHorimiya/TwitchAutoShoutOutBot  (従来の TwitchBot 処理)
+#   "ytw"       → crest-streamer/YTW_Chat_TransViewer (YTW Chat TransViewer 処理)
 on:
   workflow_dispatch:
     inputs:
+      app:
+        description: 'Target app: "twitchbot" or "ytw"'
+        required: true
+        default: 'twitchbot'
       version:
         description: 'Release version tag (e.g. v1.0.0)'
         required: true
@@ -16,7 +24,7 @@ on:
         required: false
         default: 'false'
       llama_tag:
-        description: 'llama.cpp tag (informational)'
+        description: '[twitchbot] llama.cpp tag (informational)'
         required: false
         default: ''
       src_sha:
@@ -29,9 +37,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. privateリポジトリのartifactをダウンロード ─────────────────
-      #   RELEASE_PAT: TwitchAutoShoutOutBot(private) の Actions=Read 権限が必要。
-      - name: Download artifact from private repo
+      # ═══════════════════════════════════════════════════════════════════════
+      #  ── TWITCHBOT ルート ─────────────────────────────────────────────────
+      # ═══════════════════════════════════════════════════════════════════════
+
+      # ── T-1. artifact ダウンロード（TwitchBot） ───────────────────────
+      - name: '[twitchbot] Download artifact from private repo'
+        if: inputs.app == 'twitchbot'
         env:
           RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
           PRIVATE_REPO: LikeHorimiya/TwitchAutoShoutOutBot
@@ -72,8 +84,9 @@ jobs:
 
           echo "Downloaded artifact_wrapper.zip: $(du -h artifact_wrapper.zip | cut -f1)"
 
-      # ── 2. installer EXE を取り出す ──────────────────────────────────
-      - name: Extract installer
+      # ── T-2. EXE 取り出し（TwitchBot） ───────────────────────────────
+      - name: '[twitchbot] Extract installer'
+        if: inputs.app == 'twitchbot'
         run: |
           set -euo pipefail
           unzip -o artifact_wrapper.zip
@@ -84,16 +97,18 @@ jobs:
           echo "SETUP_EXE=${SETUP_EXE}" >> "$GITHUB_ENV"
           echo "Installer: ${SETUP_EXE}"
 
-      # ── 3. SHA-256 チェックサムを生成 ─────────────────────────────────
-      - name: Generate SHA-256
+      # ── T-3. SHA-256（TwitchBot） ─────────────────────────────────────
+      - name: '[twitchbot] Generate SHA-256'
+        if: inputs.app == 'twitchbot'
         run: |
           set -euo pipefail
           SHA256=$(sha256sum "${SETUP_EXE}" | awk '{print $1}')
           echo "SHA256=${SHA256}" >> "$GITHUB_ENV"
           echo "SHA-256: ${SHA256}  ${SETUP_EXE}"
 
-      # ── 4. v0.0.1 リリースのIDを取得（常にこのタグに上書き） ─────────
-      - name: Get release ID
+      # ── T-4. リリース ID 取得（TwitchBot） ───────────────────────────
+      - name: '[twitchbot] Get release ID'
+        if: inputs.app == 'twitchbot'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -114,9 +129,9 @@ jobs:
           echo "RELEASE_ID=${RELEASE_ID}" >> "$GITHUB_ENV"
           echo "Found release ID: ${RELEASE_ID} (v0.0.1)"
 
-      # ── 5. 同名アセットを削除（上書き） ─────────────────────────────
-      #   既存の TwitchBot-*-setup.exe をすべて削除してから再アップロードする。
-      - name: Delete existing TwitchBot assets
+      # ── T-5. 既存アセット削除（TwitchBot） ───────────────────────────
+      - name: '[twitchbot] Delete existing TwitchBot assets'
+        if: inputs.app == 'twitchbot'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -131,7 +146,6 @@ jobs:
           echo "Current assets:"
           echo "${ASSETS}" | jq -r '.[] | "\(.id)  \(.name)"'
 
-          # TwitchBot-*-setup.exe にマッチするアセットIDをすべて削除
           ASSET_IDS=$(echo "${ASSETS}" | jq -r \
             '.[] | select(.name | test("TwitchBot-.*\\.exe")) | .id')
 
@@ -148,8 +162,9 @@ jobs:
             done
           fi
 
-      # ── 6. 新しい installer EXE をアップロード ───────────────────────
-      - name: Upload installer to existing release
+      # ── T-6. アップロード（TwitchBot） ───────────────────────────────
+      - name: '[twitchbot] Upload installer to existing release'
+        if: inputs.app == 'twitchbot'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -168,3 +183,150 @@ jobs:
           echo "SHA-256: ${SHA256}  ${SETUP_EXE}"
           echo ""
           echo "Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ inputs.version }}"
+
+      # ═══════════════════════════════════════════════════════════════════════
+      #  ── YTW CHAT TRANSVIEWER ルート ──────────────────────────────────────
+      # ═══════════════════════════════════════════════════════════════════════
+
+      # ── Y-1. artifact ダウンロード（YTW） ────────────────────────────
+      - name: '[ytw] Download artifact from private repo'
+        if: inputs.app == 'ytw'
+        env:
+          RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
+          PRIVATE_REPO: crest-streamer/YTW_Chat_TransViewer
+          RUN_ID: ${{ inputs.run_id }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          echo "PRIVATE_REPO: ${PRIVATE_REPO}"
+          echo "RUN_ID: ${RUN_ID}"
+          echo "VERSION: ${VERSION}"
+          API_URL="https://api.github.com/repos/${PRIVATE_REPO}/actions/runs/${RUN_ID}/artifacts"
+          echo "API_URL: ${API_URL}"
+
+          ARTIFACTS=$(curl -fsSL \
+            -H "Authorization: Bearer ${RELEASE_PAT}" \
+            -H "Accept: application/vnd.github+json" \
+            "${API_URL}")
+
+          echo "Artifact list:"
+          echo "${ARTIFACTS}" | jq -r '.artifacts[] | "\(.id)  \(.name)"'
+
+          ARTIFACT_ID=$(echo "${ARTIFACTS}" | jq -r \
+            '.artifacts[] | select(.name | test("YTW-installer-")) | .id' \
+            | head -1)
+
+          if [ -z "${ARTIFACT_ID}" ]; then
+            echo "ERROR: No YTW-installer artifact found in run ${RUN_ID}"
+            exit 1
+          fi
+          echo "Artifact ID: ${ARTIFACT_ID}"
+
+          curl -fsSL \
+            -H "Authorization: Bearer ${RELEASE_PAT}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${PRIVATE_REPO}/actions/artifacts/${ARTIFACT_ID}/zip" \
+            -o artifact_wrapper.zip
+
+          echo "Downloaded artifact_wrapper.zip: $(du -h artifact_wrapper.zip | cut -f1)"
+
+      # ── Y-2. EXE 取り出し（YTW） ─────────────────────────────────────
+      - name: '[ytw] Extract installer'
+        if: inputs.app == 'ytw'
+        run: |
+          set -euo pipefail
+          unzip -o artifact_wrapper.zip
+          echo "=== Extracted files ==="
+          ls -lh YTW_Chat_TransViewer-*.exe
+
+          SETUP_EXE=$(ls YTW_Chat_TransViewer-*.exe | head -1)
+          echo "SETUP_EXE=${SETUP_EXE}" >> "$GITHUB_ENV"
+          echo "Installer: ${SETUP_EXE}"
+
+      # ── Y-3. SHA-256（YTW） ───────────────────────────────────────────
+      - name: '[ytw] Generate SHA-256'
+        if: inputs.app == 'ytw'
+        run: |
+          set -euo pipefail
+          SHA256=$(sha256sum "${SETUP_EXE}" | awk '{print $1}')
+          echo "SHA256=${SHA256}" >> "$GITHUB_ENV"
+          echo "SHA-256: ${SHA256}  ${SETUP_EXE}"
+
+      # ── Y-4. リリース ID 取得（YTW） ─────────────────────────────────
+      - name: '[ytw] Get release ID'
+        if: inputs.app == 'ytw'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          RELEASE=$(curl -fsSL \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/v0.0.1")
+
+          RELEASE_ID=$(echo "${RELEASE}" | jq -r '.id')
+
+          if [ -z "${RELEASE_ID}" ] || [ "${RELEASE_ID}" = "null" ]; then
+            echo "ERROR: Release v0.0.1 not found in ${{ github.repository }}"
+            exit 1
+          fi
+
+          echo "RELEASE_ID=${RELEASE_ID}" >> "$GITHUB_ENV"
+          echo "Found release ID: ${RELEASE_ID} (v0.0.1)"
+
+      # ── Y-5. 既存アセット削除（YTW） ─────────────────────────────────
+      - name: '[ytw] Delete existing YTW_Chat_TransViewer assets'
+        if: inputs.app == 'ytw'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          echo "Fetching asset list for release ${RELEASE_ID} ..."
+          ASSETS=$(curl -fsSL \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/${RELEASE_ID}/assets")
+
+          echo "Current assets:"
+          echo "${ASSETS}" | jq -r '.[] | "\(.id)  \(.name)"'
+
+          ASSET_IDS=$(echo "${ASSETS}" | jq -r \
+            '.[] | select(.name | test("YTW_Chat_TransViewer-.*\\.exe")) | .id')
+
+          if [ -z "${ASSET_IDS}" ]; then
+            echo "No existing YTW_Chat_TransViewer assets found, skipping deletion."
+          else
+            for AID in ${ASSET_IDS}; do
+              echo "Deleting asset ID: ${AID}"
+              curl -fsSL -X DELETE \
+                -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${{ github.repository }}/releases/assets/${AID}"
+              echo "Deleted asset ID: ${AID}"
+            done
+          fi
+
+      # ── Y-6. アップロード（YTW） ──────────────────────────────────────
+      - name: '[ytw] Upload installer to release v0.0.1'
+        if: inputs.app == 'ytw'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          echo "Uploading ${SETUP_EXE} to release ${RELEASE_ID} ..."
+          curl -fsSL \
+            -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Content-Type: application/octet-stream" \
+            -H "Accept: application/vnd.github+json" \
+            --data-binary "@${SETUP_EXE}" \
+            "https://uploads.github.com/repos/${{ github.repository }}/releases/${RELEASE_ID}/assets?name=${SETUP_EXE}"
+
+          echo "Upload complete: ${SETUP_EXE}"
+          echo "SHA-256: ${SHA256}  ${SETUP_EXE}"
+          echo ""
+          echo "Release URL: https://github.com/${{ github.repository }}/releases/tag/v0.0.1"
