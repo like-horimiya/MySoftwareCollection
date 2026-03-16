@@ -1,11 +1,5 @@
 name: Publish Release
 
-# 各 private リポジトリの build.yml から cross-repo dispatch で呼び出される。
-# 手動トリガーも可（緊急再実行用）。
-#
-# app input の値でどちらのアプリかを判定する:
-#   "twitchbot" → LikeHorimiya/TwitchAutoShoutOutBot  (従来の TwitchBot 処理)
-#   "ytw"       → crest-streamer/YTW_Chat_TransViewer (YTW Chat TransViewer 処理)
 on:
   workflow_dispatch:
     inputs:
