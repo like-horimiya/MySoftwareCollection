@@ -39,7 +39,7 @@ jobs:
       - name: '[twitchbot] Download artifact from private repo'
         if: inputs.app == 'twitchbot'
         env:
-          YTWPAT: ${{ secrets.YTWPAT }}
+          RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
           PRIVATE_REPO: LikeHorimiya/TwitchAutoShoutOutBot
           RUN_ID: ${{ inputs.run_id }}
           VERSION: ${{ inputs.version }}
@@ -53,7 +53,7 @@ jobs:
           echo "API_URL: ${API_URL}"
 
           ARTIFACTS=$(curl -fsSL \
-            -H "Authorization: Bearer ${YTWPAT}" \
+            -H "Authorization: Bearer ${RELEASE_PAT}" \
             -H "Accept: application/vnd.github+json" \
             "${API_URL}")
 
@@ -71,7 +71,7 @@ jobs:
           echo "Artifact ID: ${ARTIFACT_ID}"
 
           curl -fsSL \
-            -H "Authorization: Bearer ${YTWPAT}" \
+            -H "Authorization: Bearer ${RELEASE_PAT}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${PRIVATE_REPO}/actions/artifacts/${ARTIFACT_ID}/zip" \
             -o artifact_wrapper.zip
@@ -157,7 +157,7 @@ jobs:
           fi
 
       # ── T-6. アップロード（TwitchBot） ───────────────────────────────
-      - name: '[twitchbot] Upload installer to existing release'
+      - name: '[twitchbot] Upload installer to release v0.0.1'
         if: inputs.app == 'twitchbot'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -176,7 +176,7 @@ jobs:
           echo "Upload complete: ${SETUP_EXE}"
           echo "SHA-256: ${SHA256}  ${SETUP_EXE}"
           echo ""
-          echo "Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ inputs.version }}"
+          echo "Release URL: https://github.com/${{ github.repository }}/releases/tag/v0.0.1"
 
       # ═══════════════════════════════════════════════════════════════════════
       #  ── YTW CHAT TRANSVIEWER ルート ──────────────────────────────────────
@@ -287,7 +287,6 @@ jobs:
           echo "Current assets:"
           echo "${ASSETS}" | jq -r '.[] | "\(.id)  \(.name)"'
 
-          # YTW インストーラ EXE と checksums.txt をすべて削除
           ASSET_IDS=$(echo "${ASSETS}" | jq -r \
             '.[] | select(.name | test("YTW_Chat_TransViewer-.*\\.exe|^YTW_checksums.*\\.txt$")) | .id')
 
@@ -305,7 +304,6 @@ jobs:
           fi
 
       # ── Y-6. アップロード（YTW） ──────────────────────────────────────
-      #   インストーラ EXE と checksums.txt の両方をアップロードする。
       - name: '[ytw] Upload installer and checksums to release v0.0.1'
         if: inputs.app == 'ytw'
         env:
@@ -328,8 +326,8 @@ jobs:
             echo "Uploaded: ${name}"
           }
 
-          upload "${SETUP_EXE}"    "${SETUP_EXE}"                                       "application/octet-stream"
-          upload "checksums.txt"   "YTW_checksums-${{ inputs.version }}.txt"            "text/plain"
+          upload "${SETUP_EXE}"  "${SETUP_EXE}"                            "application/octet-stream"
+          upload "checksums.txt" "YTW_checksums-${{ inputs.version }}.txt" "text/plain"
 
           echo ""
           echo "SHA-256: ${SHA256}  ${SETUP_EXE}"
