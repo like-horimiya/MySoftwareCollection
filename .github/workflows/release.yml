@@ -1,5 +1,11 @@
 name: Publish Release
 
+# 各 private リポジトリの build.yml から cross-repo dispatch で呼び出される。
+# 手動トリガーも可（緊急再実行用）。
+#
+# app input の値でどちらのアプリかを判定する:
+#   "twitchbot" → LikeHorimiya/TwitchAutoShoutOutBot  (従来の TwitchBot 処理)
+#   "ytw"       → crest-streamer/YTW_Chat_TransViewer (YTW Chat TransViewer 処理)
 on:
   workflow_dispatch:
     inputs:
@@ -225,14 +231,14 @@ jobs:
 
           echo "Downloaded artifact_wrapper.zip: $(du -h artifact_wrapper.zip | cut -f1)"
 
-      # ── Y-2. EXE 取り出し（YTW） ─────────────────────────────────────
+      # ── Y-2. EXE / checksums.txt 取り出し（YTW） ────────────────────
       - name: '[ytw] Extract installer'
         if: inputs.app == 'ytw'
         run: |
           set -euo pipefail
           unzip -o artifact_wrapper.zip
           echo "=== Extracted files ==="
-          ls -lh YTW_Chat_TransViewer-*.exe
+          ls -lh
 
           SETUP_EXE=$(ls YTW_Chat_TransViewer-*.exe | head -1)
           echo "SETUP_EXE=${SETUP_EXE}" >> "$GITHUB_ENV"
@@ -287,8 +293,9 @@ jobs:
           echo "Current assets:"
           echo "${ASSETS}" | jq -r '.[] | "\(.id)  \(.name)"'
 
+          # YTW インストーラ EXE と checksums.txt をすべて削除
           ASSET_IDS=$(echo "${ASSETS}" | jq -r \
-            '.[] | select(.name | test("YTW_Chat_TransViewer-.*\\.exe")) | .id')
+            '.[] | select(.name | test("YTW_Chat_TransViewer-.*\\.exe|^YTW_checksums.*\\.txt$")) | .id')
 
           if [ -z "${ASSET_IDS}" ]; then
             echo "No existing YTW_Chat_TransViewer assets found, skipping deletion."
@@ -304,23 +311,32 @@ jobs:
           fi
 
       # ── Y-6. アップロード（YTW） ──────────────────────────────────────
-      - name: '[ytw] Upload installer to release v0.0.1'
+      #   インストーラ EXE と checksums.txt の両方をアップロードする。
+      - name: '[ytw] Upload installer and checksums to release v0.0.1'
         if: inputs.app == 'ytw'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
-          echo "Uploading ${SETUP_EXE} to release ${RELEASE_ID} ..."
-          curl -fsSL \
-            -X POST \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "Content-Type: application/octet-stream" \
-            -H "Accept: application/vnd.github+json" \
-            --data-binary "@${SETUP_EXE}" \
-            "https://uploads.github.com/repos/${{ github.repository }}/releases/${RELEASE_ID}/assets?name=${SETUP_EXE}"
+          upload() {
+            local file="$1"
+            local name="$2"
+            local ctype="$3"
+            echo "Uploading ${name} ..."
+            curl -fsSL \
+              -X POST \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Content-Type: ${ctype}" \
+              -H "Accept: application/vnd.github+json" \
+              --data-binary "@${file}" \
+              "https://uploads.github.com/repos/${{ github.repository }}/releases/${RELEASE_ID}/assets?name=${name}"
+            echo "Uploaded: ${name}"
+          }
 
-          echo "Upload complete: ${SETUP_EXE}"
-          echo "SHA-256: ${SHA256}  ${SETUP_EXE}"
+          upload "${SETUP_EXE}"    "${SETUP_EXE}"                                       "application/octet-stream"
+          upload "checksums.txt"   "YTW_checksums-${{ inputs.version }}.txt"            "text/plain"
+
           echo ""
+          echo "SHA-256: ${SHA256}  ${SETUP_EXE}"
           echo "Release URL: https://github.com/${{ github.repository }}/releases/tag/v0.0.1"
